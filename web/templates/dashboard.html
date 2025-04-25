@@ -1,0 +1,823 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Dashboard - SPY Stock Price Prediction</title>
+    <link rel="stylesheet" href="https://stackpath.bootstrapcdn.com/bootstrap/4.5.2/css/bootstrap.min.css">
+    <link rel="stylesheet" href="{{ url_for('static', filename='styles.css') }}">
+    <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+    <script src="https://cdn.plot.ly/plotly-latest.min.js"></script>
+    <style>
+        .spinner-overlay {
+            position: fixed;
+            top: 0;
+            left: 0;
+            width: 100%;
+            height: 100%;
+            background-color: rgba(0, 0, 0, 0.5);
+            display: flex;
+            justify-content: center;
+            align-items: center;
+            z-index: 9999;
+            display: none;
+        }
+    </style>
+</head>
+<body>
+    <nav class="navbar navbar-expand-lg navbar-dark bg-dark">
+        <div class="container">
+            <a class="navbar-brand" href="/">SPY Price Predictor</a>
+            <button class="navbar-toggler" type="button" data-toggle="collapse" data-target="#navbarNav">
+                <span class="navbar-toggler-icon"></span>
+            </button>
+            <div class="collapse navbar-collapse" id="navbarNav">
+                <ul class="navbar-nav ml-auto">
+                    <li class="nav-item">
+                        <a class="nav-link" href="/">Home</a>
+                    </li>
+                    <li class="nav-item active">
+                        <a class="nav-link" href="/dashboard">Dashboard</a>
+                    </li>
+                </ul>
+            </div>
+        </div>
+    </nav>
+
+    <div class="container my-4">
+        <h1 class="mb-4">SPY Prediction Dashboard</h1>
+        
+        <div class="row">
+            <div class="col-md-4">
+                <div class="card mb-4">
+                    <div class="card-header bg-primary text-white">
+                        <h4 class="mb-0">Data Management</h4>
+                    </div>
+                    <div class="card-body">
+                        <p class="alert alert-info">
+                            <i class="fas fa-info-circle"></i> SPY 1-minute candle data is required for training and model predictions.
+                        </p>
+                        
+                        <div class="row mb-3">
+                            <div class="col-md-6">
+                                <div class="card mb-3">
+                                    <div class="card-header bg-secondary text-white">
+                                        <h5 class="mb-0">Polygon.io API</h5>
+                                    </div>
+                                    <div class="card-body">
+                                        <p>Using Polygon.io API for SPY 1-minute candle data.</p>
+                                        <div class="alert alert-info">
+                                            <i class="bi bi-info-circle"></i> 
+                                            <strong>Polygon.io:</strong> Provides accurate market data with timestamps for SPY 1-minute candles.
+                                        </div>
+                                        <div class="alert alert-warning">
+                                            <i class="bi bi-exclamation-triangle"></i>
+                                            <strong>Note:</strong> Polygon.io free tier has API limits of 5 calls per minute. 
+                                            The system will automatically pace requests to stay within these limits.
+                                        </div>
+                                    </div>
+                                </div>
+                            </div>
+                            
+                            <div class="col-md-6">
+                                <div class="card mb-3">
+                                    <div class="card-header bg-secondary text-white">
+                                        <h5 class="mb-0">Latest SPY Data</h5>
+                                    </div>
+                                    <div class="card-body">
+                                        <p class="mb-2">Download the latest 7 trading days of SPY 1-minute candle data for predictions:</p>
+                                        <div class="form-check mb-3">
+                                            <input class="form-check-input" type="checkbox" id="forceRefreshCheckbox">
+                                            <label class="form-check-label" for="forceRefreshCheckbox">
+                                                Force refresh (ignore cached data)
+                                            </label>
+                                        </div>
+                                        <button class="btn btn-primary" id="downloadLatestDataButton">
+                                            <i class="bi bi-cloud-download"></i> Download Latest SPY 1-Minute Candles
+                                        </button>
+                                        <div id="latestDataStats" class="mt-3 d-none">
+                                            <h6>Downloaded Data Information:</h6>
+                                            <ul class="list-group">
+                                                <li class="list-group-item d-flex justify-content-between align-items-center">
+                                                    Total Rows
+                                                    <span class="badge bg-primary rounded-pill" id="latest-total-rows">-</span>
+                                                </li>
+                                                <li class="list-group-item d-flex justify-content-between align-items-center">
+                                                    Date Range
+                                                    <span class="badge bg-secondary rounded-pill" id="latest-date-range">-</span>
+                                                </li>
+                                                <li class="list-group-item d-flex justify-content-between align-items-center">
+                                                    Trading Days
+                                                    <span class="badge bg-info rounded-pill" id="latest-trading-days">-</span>
+                                                </li>
+                                                <li class="list-group-item d-flex justify-content-between align-items-center">
+                                                    Average Rows/Day
+                                                    <span class="badge bg-success rounded-pill" id="latest-rows-per-day">-</span>
+                                                </li>
+                                            </ul>
+                                        </div>
+                                    </div>
+                                </div>
+                            </div>
+                        </div>
+                        
+                        <div class="row mb-3">
+                            <div class="col-md-6">
+                                <div class="card mb-3">
+                                    <div class="card-header bg-secondary text-white">
+                                        <h5 class="mb-0">Historical SPY Data</h5>
+                                    </div>
+                                    <div class="card-body">
+                                        <p>This system uses an on-demand approach for historical data:</p>
+                                        <div class="alert alert-info">
+                                            <i class="bi bi-info-circle"></i> 
+                                            <strong>On-demand Historical Data:</strong> Rather than downloading all historical data upfront, the system intelligently downloads only the specific month needed when training a model. This approach:
+                                            <ul class="mt-2 mb-0">
+                                                <li>Respects Polygon.io API rate limits</li>
+                                                <li>Reduces unnecessary data storage</li>
+                                                <li>Still trains on diverse market conditions</li>
+                                                <li>Downloads are cached for reuse</li>
+                                            </ul>
+                                        </div>
+                                        <p class="mt-3">To start training models, simply use the training section to the right. Random months of historical data will be automatically downloaded as needed.</p>
+                                    </div>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            </div>
+            
+            <div class="col-md-4">
+                <div class="card mb-4">
+                    <div class="card-header bg-success text-white">
+                        <h4>Model Training</h4>
+                    </div>
+                    <div class="card-body">
+                        <p>Train models on randomly selected historical data.</p>
+                        <button id="trainModelsBtn" class="btn btn-success btn-block training-button">Start Training All Models</button>
+                        <div class="mt-3">
+                            <select id="modelSelect" class="form-control mb-2">
+                                <option value="">-- Select a model to train --</option>
+                                <option value="model1">Model 1: Bayesian Neural Network</option>
+                                <option value="model2">Model 2: Bozdogan Consistent AIC</option>
+                                <option value="model3">Model 3: Viterbi Algorithm + Baum-Welch</option>
+                                <option value="model4">Model 4: Gaussian Hidden Markov Model</option>
+                                <option value="model5">Model 5: Fuzzy Logic + Stochastic Processes</option>
+                                <option value="model6">Model 6: Decision Trees with Random Forks</option>
+                                <option value="model7">Model 7: Kronecker-Factored Laplace</option>
+                                <option value="model8">Model 8: Stochastic Gradient-Driven Dynamics</option>
+                                <option value="model9">Model 9: MC Dropout</option>
+                                <option value="model10">Model 10</option>
+                            </select>
+                            <button id="trainSingleModelBtn" class="btn btn-outline-success btn-block training-button">Train Selected Model</button>
+                        </div>
+                        
+                        <div class="mt-3">
+                            <button id="simplifiedTrainingBtn" class="btn btn-warning btn-block">Simplified Training (Debug)</button>
+                            <a href="/debug" class="btn btn-outline-secondary btn-block mt-2">Debugging Dashboard</a>
+                        </div>
+                        
+                        <div id="trainingProgress" class="mt-3">
+                            <p><strong>Training Status:</strong> <span id="trainingStatus">Not started</span></p>
+                            <div class="progress">
+                                <div id="progressBar" class="progress-bar progress-bar-striped progress-bar-animated" role="progressbar" style="width: 0%"></div>
+                            </div>
+                            <p class="mt-2 small text-muted" id="trainingDetails"></p>
+                        </div>
+                    </div>
+                </div>
+            </div>
+            
+            <div class="col-md-4">
+                <div class="card mb-4">
+                    <div class="card-header bg-info text-white">
+                        <h4>Predictions</h4>
+                    </div>
+                    <div class="card-body">
+                        <p>Generate predictions for the next 5 candles.</p>
+                        <button id="predictBtn" class="btn btn-info btn-block">Make Predictions</button>
+                        <div class="mt-3">
+                            <select id="predictionModelSelect" class="form-control mb-2">
+                                <option value="">-- Use all available models --</option>
+                                <option value="model1">Model 1: Bayesian Neural Network</option>
+                                <option value="model2">Model 2: Bozdogan Consistent AIC</option>
+                                <option value="model3">Model 3: Viterbi Algorithm + Baum-Welch</option>
+                                <option value="model4">Model 4: Gaussian Hidden Markov Model</option>
+                                <option value="model5">Model 5: Fuzzy Logic + Stochastic Processes</option>
+                                <option value="model6">Model 6: Decision Trees with Random Forks</option>
+                                <option value="model7">Model 7: Kronecker-Factored Laplace</option>
+                                <option value="model8">Model 8: Stochastic Gradient-Driven Dynamics</option>
+                                <option value="model9">Model 9: MC Dropout</option>
+                                <option value="model10">Model 10: Combined Approach</option>
+                            </select>
+                        </div>
+                        <div id="predictionStatus" class="mt-3 d-none">
+                            <div class="alert alert-info">
+                                <strong>Making predictions...</strong>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </div>
+        
+        <div class="row mt-4">
+            <div class="col-md-12">
+                <div class="card">
+                    <div class="card-header bg-dark text-white">
+                        <h4>Prediction Results</h4>
+                    </div>
+                    <div class="card-body">
+                        <div id="noPredictions" class="alert alert-warning">
+                            No predictions available yet. Click "Make Predictions" to generate forecasts.
+                        </div>
+                        <div id="predictionResults" class="d-none">
+                            <div class="text-center mb-4">
+                                <h5>SPY Price Predictions for Next 5 Candles</h5>
+                                <img id="predictionPlot" class="img-fluid border rounded" alt="Prediction plot">
+                            </div>
+                            
+                            <div class="table-responsive">
+                                <table class="table table-striped table-bordered">
+                                    <thead class="thead-dark">
+                                        <tr>
+                                            <th>Time</th>
+                                            <th>Predicted Price</th>
+                                            <th>Lower Bound</th>
+                                            <th>Upper Bound</th>
+                                            <th>Model</th>
+                                        </tr>
+                                    </thead>
+                                    <tbody id="predictionTable">
+                                        <!-- Predictions will be inserted here dynamically -->
+                                    </tbody>
+                                </table>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </div>
+        
+        <div class="row mt-4">
+            <div class="col-md-12">
+                <div class="card">
+                    <div class="card-header bg-secondary text-white">
+                        <h4>Available Models</h4>
+                    </div>
+                    <div class="card-body">
+                        <div id="noModels" class="alert alert-warning">
+                            No trained models available yet. Download data and train models first.
+                        </div>
+                        <div id="availableModels" class="d-none">
+                            <div class="row" id="modelCards">
+                                <!-- Model cards will be inserted here dynamically -->
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </div>
+
+        <div class="card mb-4">
+            <div class="card-header">
+                <h5 class="mb-0">Training Status</h5>
+            </div>
+            <div class="card-body">
+                <div id="training-status">
+                    <p>No training in progress</p>
+                </div>
+                <div class="progress mb-3" style="height: 20px;">
+                    <div id="training-progress" class="progress-bar" role="progressbar" style="width: 0%;" aria-valuenow="0" aria-valuemin="0" aria-valuemax="100">0%</div>
+                </div>
+                
+                <!-- Add retraining confirmation UI -->
+                <div id="retraining-confirmation" style="display:none;" class="alert alert-warning">
+                    <h5>Model did not reach 90% accuracy threshold</h5>
+                    <p id="retraining-message">The model accuracy is below the required 90% threshold. Would you like to retrain with a different random month?</p>
+                    <div class="mt-2">
+                        <button id="btn-retrain" class="btn btn-primary mr-2">Retrain with New Month</button>
+                        <button id="btn-cancel-retrain" class="btn btn-secondary">Cancel</button>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <footer class="bg-dark text-white py-4 mt-5">
+        <div class="container text-center">
+            <p>SPY Stock Price Prediction System</p>
+            <p><small>Powered by TensorFlow, Flask, and Polygon.io</small></p>
+        </div>
+    </footer>
+
+    <script src="https://code.jquery.com/jquery-3.5.1.min.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/popper.js@1.16.1/dist/umd/popper.min.js"></script>
+    <script src="https://stackpath.bootstrapcdn.com/bootstrap/4.5.2/js/bootstrap.min.js"></script>
+    <script>
+        // Add global variables 
+        var training_status = {
+            in_progress: false,
+            model_name: null,
+            progress: 0,
+            status_message: "Not started",
+            last_updated: null,
+            needs_retraining: false
+        };
+
+        // Dashboard functionality
+        $(document).ready(function() {
+            // Check for available models on page load
+            checkAvailableModels();
+            
+            // Download latest data
+            $('#downloadLatestDataButton').click(function() {
+                const forceRefresh = $('#forceRefreshCheckbox').is(':checked');
+                
+                // Show loading state
+                $(this).html('<span class="spinner-border spinner-border-sm" role="status" aria-hidden="true"></span> Downloading...');
+                $(this).prop('disabled', true);
+                
+                $.ajax({
+                    url: '/api/data/download/latest',
+                    type: 'POST',
+                    contentType: 'application/json',
+                    data: JSON.stringify({
+                        force_refresh: forceRefresh
+                    }),
+                    success: function(response) {
+                        // Reset button state
+                        $('#downloadLatestDataButton').html('<i class="bi bi-cloud-download"></i> Download Latest SPY 1-Minute Candles');
+                        $('#downloadLatestDataButton').prop('disabled', false);
+                        
+                        if (response.success) {
+                            // Show success message
+                            alert(response.message);
+                            
+                            // Update stats
+                            $('#latest-total-rows').text(response.stats.total_rows || '0');
+                            $('#latest-date-range').text(response.stats.date_range || 'N/A');
+                            $('#latest-trading-days').text(response.stats.trading_days || '0');
+                            $('#latest-rows-per-day').text(response.stats.average_rows_per_day || '0');
+                            
+                            // Show stats section
+                            $('#latestDataStats').removeClass('d-none');
+                        } else {
+                            alert('Error: ' + response.message);
+                        }
+                    },
+                    error: function() {
+                        // Reset button state
+                        $('#downloadLatestDataButton').html('<i class="bi bi-cloud-download"></i> Download Latest SPY 1-Minute Candles');
+                        $('#downloadLatestDataButton').prop('disabled', false);
+                        alert('Error downloading data. Please check the logs for details.');
+                    }
+                });
+            });
+            
+            // Train all models button
+            $('#trainModelsBtn').click(function() {
+                startTraining();
+            });
+            
+            // Train single model button
+            $('#trainSingleModelBtn').click(function() {
+                let selectedModel = $("#modelSelect").val();
+                if (selectedModel) {
+                    startTraining(selectedModel);
+                } else {
+                    alert("Please select a model first.");
+                }
+            });
+            
+            $("#simplifiedTrainingBtn").click(function() {
+                startSimplifiedTraining();
+            });
+            
+            // Make predictions button
+            $('#predictBtn').click(function() {
+                const selectedModel = $('#predictionModelSelect').val(); 
+                makePredictions(selectedModel);
+            });
+            
+            // Function to start training
+            function startTraining(modelName = null) {
+                // If no model name provided, get it from the selector
+                if (!modelName) {
+                    modelName = $("#modelSelect").val();
+                }
+                
+                // Store model name for later use (when retraining)
+                window.lastTrainedModel = modelName;
+                
+                // Disable buttons
+                $('.training-button, #trainModelsBtn, #trainSingleModelBtn, #modelSelect').prop('disabled', true);
+                $('#trainModelsBtn').html('<span class="spinner-border spinner-border-sm" role="status" aria-hidden="true"></span> Training...');
+                $('#trainSingleModelBtn').html('<span class="spinner-border spinner-border-sm" role="status" aria-hidden="true"></span> Training...');
+                
+                // Check if selected model is implemented yet
+                if (modelName && 
+                    modelName !== 'model1' && 
+                    modelName !== 'model2' && 
+                    modelName !== 'model3' && 
+                    modelName !== 'model4' && 
+                    modelName !== 'model5' && 
+                    modelName !== 'model6' && 
+                    modelName !== 'model7' && 
+                    modelName !== 'model8' && 
+                    modelName !== 'model9') {
+                    // Only Models 1-9 are supported
+                    setTimeout(function() {
+                        $('.training-button, #trainModelsBtn, #trainSingleModelBtn, #modelSelect').prop('disabled', false);
+                        $('#trainModelsBtn').text('Start Training All Models');
+                        $('#trainSingleModelBtn').text('Train Selected Model');
+                        alert('Model ' + modelName + ' is not yet fully implemented. Please select Model 1-9 or "Train All Available Models".');
+                    }, 500);
+                    return;
+                }
+                
+                // Show progress
+                $('#trainingProgress').removeClass('d-none');
+                $('#trainingStatus').text('Initializing...');
+                $('#progressBar').css('width', '0%').addClass('progress-bar-animated');
+                $('#trainingDetails').text('');
+                
+                // Hide any previous retraining prompt
+                $('#retraining-confirmation').hide();
+                
+                // Start training
+                $.ajax({
+                    url: '/api/training/start',
+                    type: 'POST',
+                    contentType: 'application/json',
+                    data: JSON.stringify({ model_name: modelName }),
+                    success: function(response) {
+                        if (response.success) {
+                            if (response.threshold_reached) {
+                                // Training was successful (90% threshold reached)
+                                $('#trainingStatus').text(`Training completed successfully - Accuracy: ${(response.accuracy * 100).toFixed(2)}%`);
+                                $('#progressBar').css('width', '100%').removeClass('progress-bar-animated').addClass('bg-success');
+                                $('#trainingDetails').text(`Model ${response.model_name} trained successfully at ${new Date().toLocaleTimeString()}`);
+                            } else if (response.needs_retraining) {
+                                // Below threshold - show retraining prompt
+                                $('#trainingStatus').text(`Training completed - Accuracy: ${(response.accuracy * 100).toFixed(2)}% (below threshold)`);
+                                $('#progressBar').css('width', '100%').removeClass('progress-bar-animated').addClass('bg-warning');
+                                checkRetraining(response);
+                            } else {
+                                // Generic success
+                                $('#trainingStatus').text('Training completed');
+                                $('#progressBar').css('width', '100%').removeClass('progress-bar-animated');
+                                $('#trainingDetails').text(`Training completed at ${new Date().toLocaleTimeString()}`);
+                            }
+                            
+                            // Check for available models
+                            checkAvailableModels();
+                        } else {
+                            $('#trainingStatus').text('Failed');
+                            $('#progressBar').css('width', '100%').removeClass('progress-bar-animated').addClass('bg-danger');
+                            $('#trainingDetails').text(`Error: ${response.message}`);
+                        }
+                        
+                        // Re-enable buttons
+                        $('.training-button, #trainModelsBtn, #trainSingleModelBtn, #modelSelect').prop('disabled', false);
+                        $('#trainModelsBtn').text('Start Training All Models');
+                        $('#trainSingleModelBtn').text('Train Selected Model');
+                    },
+                    error: function(xhr) {
+                        $('#trainingStatus').text('Failed');
+                        $('#progressBar').css('width', '100%').removeClass('progress-bar-animated').addClass('bg-danger');
+                        $('#trainingDetails').text(`Error: ${xhr.responseJSON ? xhr.responseJSON.message : 'Unknown error'}`);
+                        
+                        // Re-enable buttons
+                        $('.training-button, #trainModelsBtn, #trainSingleModelBtn, #modelSelect').prop('disabled', false);
+                        $('#trainModelsBtn').text('Start Training All Models');
+                        $('#trainSingleModelBtn').text('Train Selected Model');
+                    }
+                });
+                
+                // Poll training status
+                pollTrainingStatus();
+            }
+            
+            // Function to poll training status
+            function pollTrainingStatus() {
+                const interval = setInterval(function() {
+                    $.ajax({
+                        url: '/api/training/status',
+                        type: 'GET',
+                        success: function(response) {
+                            // Update global variable
+                            training_status = response;
+                            
+                            // Update UI
+                            updateTrainingStatus(response);
+                            
+                            if (response.in_progress) {
+                                // Continue polling
+                                // Don't clear the interval
+                            } else {
+                                // Training complete
+                                clearInterval(interval);
+                            }
+                        },
+                        error: function() {
+                            clearInterval(interval);
+                        }
+                    });
+                }, 1000);
+            }
+            
+            // Function to make predictions
+            function makePredictions(modelName = null) {
+                // Show prediction status
+                $('#predictionStatus').removeClass('d-none');
+                $('#noPredictions').addClass('d-none');
+                
+                // Disable button
+                $('#predictBtn').prop('disabled', true).html('<span class="spinner-border spinner-border-sm" role="status" aria-hidden="true"></span> Predicting...');
+                
+                // Check if selected model is implemented yet
+                var isModelImplemented = true;
+                if (modelName && modelName !== 'model1' && modelName !== 'model2') {
+                    // Only Models 1 and 2 are currently fully implemented
+                    isModelImplemented = false;
+                    setTimeout(function() {
+                        $('#predictionStatus').addClass('d-none');
+                        $('#predictBtn').prop('disabled', false).text('Make Predictions');
+                        alert('Model ' + modelName + ' is not yet fully implemented. Please select Model 1, Model 2, or "Use all available models".');
+                    }, 500);
+                    return;
+                }
+                
+                // Make AJAX request
+                $.ajax({
+                    url: '/api/predict',
+                    type: 'POST',
+                    contentType: 'application/json',
+                    data: JSON.stringify({ model_name: modelName }),
+                    success: function(response) {
+                        // Hide status and show results
+                        $('#predictionStatus').addClass('d-none');
+                        $('#predictionResults').removeClass('d-none');
+                        
+                        if (response.success) {
+                            // Update plot image
+                            if (response.plot_file) {
+                                $('#predictionPlot').attr('src', `/plots/${response.plot_file}`);
+                            }
+                            
+                            // Clear previous prediction table
+                            $('#predictionTable').empty();
+                            
+                            // Add predictions to table
+                            for (const [modelName, prediction] of Object.entries(response.predictions)) {
+                                if (prediction) {
+                                    for (let i = 0; i < prediction.predicted_values.length; i++) {
+                                        $('#predictionTable').append(
+                                            '<tr>' +
+                                            '<td>' + prediction.time_points[i] + '</td>' +
+                                            '<td>$' + prediction.predicted_values[i].toFixed(2) + '</td>' +
+                                            '<td>' + (prediction.lower_bound ? '$' + prediction.lower_bound[i].toFixed(2) : 'N/A') + '</td>' +
+                                            '<td>' + (prediction.upper_bound ? '$' + prediction.upper_bound[i].toFixed(2) : 'N/A') + '</td>' +
+                                            '<td>' + modelName + '</td>' +
+                                            '</tr>'
+                                        );
+                                    }
+                                }
+                            }
+                        } else {
+                            alert('Error making predictions: ' + response.message);
+                        }
+                        
+                        // Re-enable button
+                        $('#predictBtn').prop('disabled', false).text('Make Predictions');
+                    },
+                    error: function(xhr) {
+                        $('#predictionStatus').addClass('d-none');
+                        $('#predictBtn').prop('disabled', false).text('Make Predictions');
+                        alert('Error making predictions. Please try again.');
+                    }
+                });
+            }
+            
+            // Function to check available models
+            function checkAvailableModels() {
+                $.ajax({
+                    url: '/api/models',
+                    type: 'GET',
+                    success: function(response) {
+                        if (response.success && response.models.length > 0) {
+                            // Show available models section
+                            $('#noModels').addClass('d-none');
+                            $('#availableModels').removeClass('d-none');
+                            
+                            // Clear previous model cards
+                            $('#modelCards').empty();
+                            
+                            // Clear prediction model select
+                            $('#predictionModelSelect').html('<option value="">-- Use all available models --</option>');
+                            
+                            // Add model cards and options
+                            response.models.forEach(model => {
+                                // Add model card
+                                $('#modelCards').append(
+                                    '<div class="col-md-4 mb-3">' +
+                                    '<div class="card">' +
+                                    '<div class="card-header bg-primary text-white">' +
+                                    model +
+                                    '</div>' +
+                                    '<div class="card-body">' +
+                                    '<p>Trained model available for predictions.</p>' +
+                                    '<button class="btn btn-sm btn-info predict-model-btn" data-model="' + model + '">Predict with this model</button>' +
+                                    '</div>' +
+                                    '</div>' +
+                                    '</div>'
+                                );
+                                
+                                // Add option to prediction model select
+                                $('#predictionModelSelect').append('<option value="' + model + '">' + model + '</option>');
+                            });
+                            
+                            // Add click event for predict model buttons
+                            $('.predict-model-btn').click(function() {
+                                const modelName = $(this).data('model');
+                                $('#predictionModelSelect').val(modelName);
+                                makePredictions(modelName);
+                            });
+                        }
+                    }
+                });
+            }
+        });
+
+        // Utility functions
+        function showSpinner() {
+            // Add a spinner to the page if it doesn't exist
+            if ($('#global-spinner').length === 0) {
+                $('body').append('<div id="global-spinner" class="spinner-overlay"><div class="spinner-border text-light" role="status"><span class="sr-only">Loading...</span></div></div>');
+            }
+            $('#global-spinner').show();
+        }
+
+        function hideSpinner() {
+            $('#global-spinner').hide();
+        }
+
+        function showAlert(type, message) {
+            // Create a dismissible alert
+            const alertHtml = `
+                <div class="alert alert-${type} alert-dismissible fade show" role="alert">
+                    ${message}
+                    <button type="button" class="close" data-dismiss="alert" aria-label="Close">
+                        <span aria-hidden="true">&times;</span>
+                    </button>
+                </div>
+            `;
+            
+            // Insert at the top of the container
+            $('.container').first().prepend(alertHtml);
+            
+            // Auto-dismiss after 5 seconds
+            setTimeout(() => {
+                $('.alert').alert('close');
+            }, 5000);
+        }
+
+        function startSimplifiedTraining() {
+            // Show loading indicator
+            $("#trainingProgress").removeClass("d-none");
+            $("#trainingStatus").text("Starting simplified training...");
+            $("#progressBar").css("width", "10%");
+            
+            // Disable buttons during training
+            $("#trainModelsBtn").prop("disabled", true);
+            $("#trainSingleModelBtn").prop("disabled", true);
+            $("#simplifiedTrainingBtn").prop("disabled", true);
+            $("#predictBtn").prop("disabled", true);
+            
+            // Make API call
+            $.ajax({
+                url: "/api/training/simplified",
+                type: "POST",
+                contentType: "application/json",
+                data: JSON.stringify({}),
+                success: function(response) {
+                    if (response.success) {
+                        $("#trainingStatus").text("Simplified training completed successfully");
+                        $("#progressBar").css("width", "100%");
+                        $("#progressBar").removeClass("progress-bar-animated").addClass("bg-success");
+                        
+                        // Show completion message
+                        $("#trainingDetails").html(`
+                            <div class="alert alert-success mt-3">
+                                <strong>Success!</strong> Simplified training completed successfully.
+                                ${response.metrics ? `<pre class="mt-2">${JSON.stringify(response.metrics, null, 2)}</pre>` : ''}
+                            </div>
+                        `);
+                        
+                        // Check if model was trained successfully
+                        if (response.metrics) {
+                            showSuccessMessage("Model trained successfully! You can now make predictions.");
+                        }
+                    } else {
+                        $("#trainingStatus").text("Training failed");
+                        $("#progressBar").css("width", "100%");
+                        $("#progressBar").removeClass("progress-bar-animated").addClass("bg-danger");
+                        
+                        // Show error message
+                        $("#trainingDetails").html(`
+                            <div class="alert alert-danger mt-3">
+                                <strong>Error:</strong> ${response.message}
+                            </div>
+                        `);
+                    }
+                    
+                    // Re-enable buttons
+                    $("#trainModelsBtn").prop("disabled", false);
+                    $("#trainSingleModelBtn").prop("disabled", false);
+                    $("#simplifiedTrainingBtn").prop("disabled", false);
+                    $("#predictBtn").prop("disabled", false);
+                },
+                error: function(xhr, status, error) {
+                    let errorMsg = "An error occurred during training.";
+                    try {
+                        const errorResponse = JSON.parse(xhr.responseText);
+                        if (errorResponse.message) {
+                            errorMsg = errorResponse.message;
+                        }
+                    } catch (e) {
+                        console.error("Error parsing error response:", e);
+                    }
+                    
+                    $("#trainingStatus").text("Training failed");
+                    $("#progressBar").css("width", "100%");
+                    $("#progressBar").removeClass("progress-bar-animated").addClass("bg-danger");
+                    
+                    // Show error message
+                    $("#trainingDetails").html(`
+                        <div class="alert alert-danger mt-3">
+                            <strong>Error:</strong> ${errorMsg}
+                        </div>
+                    `);
+                    
+                    // Re-enable buttons
+                    $("#trainModelsBtn").prop("disabled", false);
+                    $("#trainSingleModelBtn").prop("disabled", false);
+                    $("#simplifiedTrainingBtn").prop("disabled", false);
+                    $("#predictBtn").prop("disabled", false);
+                }
+            });
+        }
+
+        // Check if model needs retraining
+        function checkRetraining(data) {
+            if (data.needs_retraining) {
+                // Show retraining confirmation
+                $('#retraining-confirmation').show();
+                $('#retraining-message').text(`Model "${data.model_name}" achieved ${(data.accuracy * 100).toFixed(2)}% accuracy, below the 90% threshold. Would you like to retrain with a different random month?`);
+            } else {
+                // Hide retraining confirmation
+                $('#retraining-confirmation').hide();
+            }
+        }
+
+        // Add event handlers for retraining buttons
+        $('#btn-retrain').click(function() {
+            // Get the model name from training status
+            const modelName = training_status.model_name;
+            
+            // Hide the confirmation
+            $('#retraining-confirmation').hide();
+            
+            // Start retraining with same model but different month
+            startTraining(modelName);
+        });
+
+        $('#btn-cancel-retrain').click(function() {
+            // Just hide the confirmation
+            $('#retraining-confirmation').hide();
+        });
+
+        // Add updateTrainingStatus function
+        function updateTrainingStatus(data) {
+            // Update the UI with training status
+            $('#trainingStatus').text(data.status_message || 'Unknown status');
+            $('#progressBar').css('width', `${data.progress || 0}%`);
+            $('#trainingDetails').text(`Last updated: ${data.last_updated || new Date().toLocaleTimeString()}`);
+            
+            // Update training progress UI
+            $('#trainingProgress').removeClass('d-none');
+            
+            // If training is complete (not in progress)
+            if (!data.in_progress) {
+                $('#progressBar').removeClass('progress-bar-animated');
+                if (data.needs_retraining) {
+                    // Show retraining prompt
+                    checkRetraining(data);
+                }
+            }
+        }
+    </script>
+</body>
+</html>
